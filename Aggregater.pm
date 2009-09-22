@@ -39,7 +39,6 @@ sub paragraph {
 	my $limit= shift;
 	my $chache_time = shift;
 	my $len  = shift;
-	my $date = shift;
 
 	if(!defined($limit)){ $limit = 20; }
 	if(!defined($chache_time)){ $chache_time = 60; }
@@ -89,10 +88,20 @@ sub paragraph {
 
 	my $rss_tmpl = <<'EOM';
 <h2><a href="<!--TMPL_VAR NAME="FEED_LINK"-->"><!--TMPL_VAR NAME="FEED_TITLE"--></a></h2>
-<ul>
-<!--TMPL_LOOP NAME="ENTRY"-->
-<li><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></li><!--/TMPL_LOOP-->
-</ul>
+<!--TMPL_IF NAME="FEED_COMMENT"-->
+	<dl>
+	<!--TMPL_LOOP NAME="ENTRY"-->
+	<dt><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></dt>
+	<dd><!--TMPL_VAR NAME="ITEM_COMMENT"--></dd>
+	<!--/TMPL_LOOP-->
+	</dl>
+<!--TMPL_ELSE-->
+	<ul>
+	<!--TMPL_LOOP NAME="ENTRY"-->
+	<li><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></li>
+	<!--/TMPL_LOOP-->
+	</ul>
+<!--/TMPL_IF-->
 EOM
 
 	my $tpp = XML::TreePP->new();
@@ -112,6 +121,11 @@ EOM
 	my (%hash,@entries,$cnt);
 	$cnt=1;
 
+	if( $len==0 ){
+		$hash{'FEED_COMMENT'} = 0;
+	} else {
+		$hash{'FEED_COMMENT'} = 1;
+	}
 	if($ver eq 'RSS1.0'){
 		$hash{'FEED_TITLE'} = $tree->{"rdf:RDF"}->{"channel"}->{"title"};
 		$hash{'FEED_LINK'}  = $tree->{"rdf:RDF"}->{"channel"}->{"link"};
