@@ -51,7 +51,8 @@ sub paragraph {
 		return &Util::paragraph_error("RSSのURLが指定されていません。");
 	}
 	my $filename = $url;
-	my $cache = $wiki->config('log_dir')."/".&Util::url_encode($filename).".rss";
+	my $cache = &Util::url_encode($filename);
+	$cache = $wiki->config('log_dir')."/".&Util::md5($cache).".rss";
 
 	my $readflag = 0;
 	if(-e $cache){
@@ -95,6 +96,7 @@ sub paragraph {
 EOM
 
 	my $tpp = XML::TreePP->new();
+	$tpp->set(force_array => [ "item","entry" ]);
 	my $tree = $tpp->parse( $content );
 
 	my $ver = "RSS1.0";
