@@ -20,6 +20,7 @@
 package plugin::rss2::Aggregater;
 use strict;
 use XML::TreePP;
+use XML::FeedPP;
 #==============================================================================
 # コンストラクタ
 #==============================================================================
@@ -159,7 +160,7 @@ EOM
 			$cnt++;
 		}
 
-	}elsif($ver eq 'ATOM0.3'){
+	}elsif( $ver eq 'ATOM0.3'){
 		$hash{'FEED_TITLE'} = $tree->{"feed"}->{"title"}->{"#text"};
 		$hash{'FEED_LINK'}  = $tree->{"feed"}->{"link"}->{"-href"};
 		$hash{'FEED_DESC'}  = $tree->{"feed"}->{"modified"};
@@ -176,6 +177,23 @@ EOM
 			} );
 			$cnt++;
 		}
+	}else{
+		my $feed;
+		$feed = XML::FeedPP::Atom->new( $url );
+		$hash{'FEED_TITLE'} = $feed->title();
+		$hash{'FEED_LINK'} = $feed->link();
+		$hash{'FEED_DESC'} = $feed->description();
+		foreach my $item ( $feed->get_item() ){
+			if($cnt>$limit){ last; }
+			my $desc = &Util::delete_tag( $item->description() );
+			$desc = &Util::delete_tag($item->description() ) if($desc eq '');
+			push( @entries, {
+				'ITEM_TITLE'	=> $item->title(),
+				'ITEM_LINK'		=> $item->link(),
+				'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
+			} );
+			$cnt++;
+		} 
 	}
 
 	$hash{'ENTRY'} = \@entries;
