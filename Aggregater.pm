@@ -76,48 +76,23 @@ sub paragraph {
 		close(RSS);
 	}
 
-	if($content !~ /<(\?xml|rss) version/i){
-=pod
-#	Auto-Discovery（せめて以下の様な記述）を判別できれば、ライブブックマーク（WEBフィード）みたいに実装できそうだが…
-#	<link rel="alternate" type="application/rss+xml" title="RSS" href="index.cgi?action=RSS">
-#	<link rel="alternate" type="application/rss+xml" title="RSS1.0" href="?action=RSS10">
-#	<link rel="alternate" type="application/rss+xml" title="RSS2.0" href="?action=RSS20">
-#	<link rel="alternate" type="application/atom+xml" title="Atom0.3" href="?action=ATOM">
-=cut
-		return &Util::paragraph_error("XMLファイルではありません。");
-	}
-
 	my $rss_tmpl = <<'EOM';
 <h2><a href="<!--TMPL_VAR NAME="FEED_LINK"-->"><!--TMPL_VAR NAME="FEED_TITLE"--></a></h2>
 <!--TMPL_IF NAME="FEED_COMMENT"-->
 	<dl>
 	<!--TMPL_LOOP NAME="ENTRY"-->
-	<dt><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></dt>
+	<dt><!--TMPL_VAR NAME="ITEM_DATE"--><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></dt>
 	<dd><!--TMPL_VAR NAME="ITEM_COMMENT"--></dd>
 	<!--/TMPL_LOOP-->
 	</dl>
 <!--TMPL_ELSE-->
 	<ul>
 	<!--TMPL_LOOP NAME="ENTRY"-->
-	<li><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></li>
+	<li><!--TMPL_VAR NAME="ITEM_DATE"--><a href="<!--TMPL_VAR NAME="ITEM_LINK"-->"><!--TMPL_VAR NAME="ITEM_TITLE"--></a></li>
 	<!--/TMPL_LOOP-->
 	</ul>
 <!--/TMPL_IF-->
 EOM
-
-	my $tpp = XML::TreePP->new();
-	$tpp->set(force_array => [ "item","entry" ]);
-	my $tree = $tpp->parse( $content );
-
-	my $ver = "RSS1.0";
-	if(defined($tree->{"rss"})){
-		$ver = "RSS".$tree->{"rss"}->{"-version"};
-#		$buf .= "DublinCoreモジュールです。<br>" if(defined($tree->{"rdf:RDF"}->{"-xmlns:dc"}));
-#		$buf .= "Syndicationモジュールです。<br>" if(defined($tree->{"rdf:RDF"}->{"-xmlns:sy"}));
-#		$buf .= "Contentモジュールです。<br>" if(defined($tree->{"rdf:RDF"}->{"-xmlns:content"}));
-	}elsif(defined($tree->{"feed"})){
-		$ver = "ATOM".$tree->{"feed"}->{"-version"};
-	}
 
 	my (%hash,@entries,$cnt);
 	$cnt=1;
@@ -127,73 +102,23 @@ EOM
 	} else {
 		$hash{'FEED_COMMENT'} = 1;
 	}
-	if($ver eq 'RSS1.0'){
-		$hash{'FEED_TITLE'} = $tree->{"rdf:RDF"}->{"channel"}->{"title"};
-		$hash{'FEED_LINK'}  = $tree->{"rdf:RDF"}->{"channel"}->{"link"};
-		$hash{'FEED_DESC'}  = &Util::delete_tag($tree->{"rdf:RDF"}->{"channel"}->{"description"});
-		foreach (@{ $tree->{"rdf:RDF"}->{"item"} }){
-			if($cnt>$limit){ last; }
-			my $desc = &Util::delete_tag($_->{"description"});
-			$desc = &Util::delete_tag($_->{"dc:description"}) if($desc eq '' && defined($tree->{"rdf:RDF"}->{"-xmlns:dc"}));
-			
-			push( @entries, {
-				'ITEM_TITLE'   => $_->{title},
-				'ITEM_LINK'    => $_->{link},
-				'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
-			} );
-			$cnt++;
-		}
+	my $feed = XML::FeedPP->new( $url );
+	$hash{'FEED_TITLE'} = $feed->title();
+	$hash{'FEED_LINK'} = $feed->link();
+	$hash{'FEED_DESC'} = $feed->description();
 
-	}elsif($ver eq 'RSS2.0' || $ver eq 'RSS0.91'){
-		$hash{'FEED_TITLE'} = $tree->{"rss"}->{"channel"}->{"title"};
-		$hash{'FEED_LINK'}  = $tree->{"rss"}->{"channel"}->{"link"};
-		$hash{'FEED_DESC'}  = &Util::delete_tag($tree->{"rss"}->{"channel"}->{"description"});
-		foreach (@{ $tree->{"rss"}->{"channel"}->{"item"} }){
-			if($cnt>$limit){ last; }
-			my $desc = &Util::delete_tag($_->{description});
+	foreach my $item ( $feed->get_item() ){
+		if($cnt>$limit){ last; }
+		my $desc = &Util::delete_tag( $item->description() );
+		$desc = &Util::delete_tag($item->description() ) if($desc eq '');
+		push( @entries, {
+			'ITEM_TITLE'	=> $item->title(),
+			'ITEM_LINK'		=> $item->link(),
+			'ITEM_DATE'		=> &_encode_by_YYYYMMDDhhmm($item->pubDate()),
 
-			push( @entries, {
-				'ITEM_TITLE'   => $_->{"title"},
-				'ITEM_LINK'    => $_->{"link"},
-				'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
-			} );
-			$cnt++;
-		}
-
-	}elsif( $ver eq 'ATOM0.3'){
-		$hash{'FEED_TITLE'} = $tree->{"feed"}->{"title"}->{"#text"};
-		$hash{'FEED_LINK'}  = $tree->{"feed"}->{"link"}->{"-href"};
-		$hash{'FEED_DESC'}  = $tree->{"feed"}->{"modified"};
-		foreach (@{ $tree->{"feed"}->{"entry"} }){
-			if($cnt>$limit){ last; }
-			##
-			my $desc = &Util::delete_tag($_->{sammary}->{"#text"});
-			$desc = &Util::delete_tag($_->{content}->{"#text"}) if($desc eq '');
-
-			push( @entries, {
-				'ITEM_TITLE'   => $_->{title}->{"#text"},
-				'ITEM_LINK'    => $_->{link}->{"-href"},
-				'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
-			} );
-			$cnt++;
-		}
-	}else{
-		my $feed;
-		$feed = XML::FeedPP::Atom->new( $url );
-		$hash{'FEED_TITLE'} = $feed->title();
-		$hash{'FEED_LINK'} = $feed->link();
-		$hash{'FEED_DESC'} = $feed->description();
-		foreach my $item ( $feed->get_item() ){
-			if($cnt>$limit){ last; }
-			my $desc = &Util::delete_tag( $item->description() );
-			$desc = &Util::delete_tag($item->description() ) if($desc eq '');
-			push( @entries, {
-				'ITEM_TITLE'	=> $item->title(),
-				'ITEM_LINK'		=> $item->link(),
-				'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
-			} );
-			$cnt++;
-		} 
+			'ITEM_COMMENT' => &_cut_by_bytelength($desc, $len)
+		} );
+		$cnt++;
 	}
 
 	$hash{'ENTRY'} = \@entries;
@@ -204,6 +129,30 @@ EOM
 	&Jcode::convert(\$buf ,'euc','utf8');
 	return $buf;
 
+}
+
+
+#===========================================================
+# pubDateの日付を編集 
+#===========================================================
+sub _encode_by_YYYYMMDDhhmm{
+	my $date = shift;
+
+	if ($date =~ /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d))?)?(Z|([+-]\d{2}):(\d{2}))?)?)?)?$/) {
+
+		my ($year, $month, $day, $hour, $min, $sec, $wday) = ($1, ($2 ? $2 : 1), ($3 ? $3 : 1), $4, $5, $6);
+	    my $offset = (abs($9) * 60 + $10) * ($9 >= 0 ? 60 : -60) if ($8);
+		my $time   = ($8) ? &Time::Local::timegm($sec, $min, $hour, $day, $month - 1, $year) - $offset
+			: &Time::Local::timelocal($sec, $min, $hour, $day, $month - 1, $year) - $offset;
+
+		($sec, $min, $hour, $day, $month, $year, $wday) = localtime($time);
+		#$wday = (qw(Sun Mon Thu Wed Tue Fir Sat))[$wday];
+		$wday = (qw(日 月 火 水 木 金 土))[$wday];
+	   # $date = sprintf('[%04d-%02d-%02d (%s) %02d:%02d:%02d] ', $year + 1900, $month + 1, $day, $wday, $hour, $min, $sec);
+	    $date = sprintf('%2d月%2d日 (%s) %02d:%02d ',  $month + 1, $day, $wday, $hour, $min);
+	}
+	&Jcode::convert(\$date ,'utf8');
+	return $date;
 }
 
 #	from "IndexCalendarHandler.pm"
